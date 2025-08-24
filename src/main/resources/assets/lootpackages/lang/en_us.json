@@ -1,0 +1,13 @@
+{
+  "itemGroup.starterpack": "Example Mod Tab",
+  "block.starterpack.example_block": "Example Block",
+  "item.starterpack.example_item": "Example Item",
+
+  "starterpack.configuration.title": "starterpack Configs",
+  "starterpack.configuration.section.starterpack.common.toml": "starterpack Configs",
+  "starterpack.configuration.section.starterpack.common.toml.title": "starterpack Configs",
+  "starterpack.configuration.items": "Item List",
+  "starterpack.configuration.logDirtBlock": "Log Dirt Block",
+  "starterpack.configuration.magicNumberIntroduction": "Magic Number Text",
+  "starterpack.configuration.magicNumber": "Magic Number"
+}
