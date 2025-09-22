@@ -5,16 +5,15 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.enchantment.Enchantments;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -49,26 +48,11 @@ public class LootPackagesMod {
             () -> new PackageItem(PackageType.BIOME_SPECIFIC));
     public static final Supplier<Item> MYSTERY_PACKAGE = ITEMS.register("mystery_package",
             () -> new PackageItem(PackageType.MYSTERY));
-
-    // Simple toggle for starter packages (change to false to disable)
-    // This is now overridden by config file
-    private static final boolean GIVE_STARTER_PACKAGES = true;
+    public static final Supplier<Item> DEEP_DARK_PACKAGE = ITEMS.register("deep_dark_package",
+            () -> new PackageItem(PackageType.DEEP_DARK));
 
     private static final String NBT_TAG_RECEIVED_STARTER = "received_starter_pack";
     private static final Random RANDOM = new Random();
-
-    // Specific modded items to include as potential drops
-    private static final Set<String> ALLOWED_MODDED_ITEMS = Set.of(
-            "mysticalagriculture:inferium_sword",
-            "mysticalagriculture:prudentium_sword",
-            "mysticalagriculture:tertium_sword",
-            "apothic_enchanting:ender_library",
-            "apothic_enchanting:hellshelf",
-            "apothic_enchanting:seashelf",
-            "apothic_enchanting:doormant_deepshelf",
-            "apothic_enchanting:endshelf",
-            "iron_spellbooks:scroll"
-    );
 
     // Items to exclude from random selection
     private static final Set<String> EXCLUDED_KEYWORDS = Set.of(
@@ -83,15 +67,92 @@ public class LootPackagesMod {
             Items.DEBUG_STICK, Items.KNOWLEDGE_BOOK, Items.BEDROCK
     );
 
+    // PERFORMANCE OPTIMIZATION: Cache for allowed items
+    private static List<Item> cachedAllowedItems = null;
+    private static boolean itemCacheBuilt = false;
+
     public LootPackagesMod(IEventBus modEventBus, ModContainer modContainer) {
+        // Register items
         ITEMS.register(modEventBus);
+
+        // Register creative mode tabs
+        ModCreativeModeTabs.register(modEventBus);
 
         // Register the config
         modContainer.registerConfig(ModConfig.Type.COMMON, LootPackagesConfig.SPEC);
 
+        // Register for setup event to build cache
+        modEventBus.addListener(this::onCommonSetup);
+
         NeoForge.EVENT_BUS.register(this);
         LOGGER.info("Loot Packages Mod loaded - Multiple themed packages available!");
         LOGGER.info("Config file will be created at: config/lootpackages-common.toml");
+    }
+
+    public void onCommonSetup(FMLCommonSetupEvent event) {
+        // Build the item cache after all mods have registered their items
+        event.enqueueWork(() -> {
+            buildItemCache();
+            LOGGER.info("Built item cache with {} allowed items", cachedAllowedItems.size());
+        });
+    }
+
+    /**
+     * Builds the cache of allowed items once during mod initialization
+     * This prevents expensive registry iteration every time mystery packages are opened
+     */
+    private static void buildItemCache() {
+        if (itemCacheBuilt) {
+            return; // Prevent multiple cache builds
+        }
+
+        cachedAllowedItems = new ArrayList<>();
+        int totalItems = 0;
+        int excludedItems = 0;
+
+        for (Item item : BuiltInRegistries.ITEM) {
+            totalItems++;
+            ResourceLocation location = BuiltInRegistries.ITEM.getKey(item);
+            if (location != null) {
+                boolean isVanilla = "minecraft".equals(location.getNamespace());
+                if (isVanilla && isItemAllowed(item)) {
+                    cachedAllowedItems.add(item);
+                } else {
+                    excludedItems++;
+                }
+            } else {
+                excludedItems++;
+            }
+        }
+
+        // Make the list immutable to prevent accidental modification
+        cachedAllowedItems = Collections.unmodifiableList(cachedAllowedItems);
+        itemCacheBuilt = true;
+
+        LOGGER.info("Item cache built: {} allowed items out of {} total items ({} excluded)",
+                cachedAllowedItems.size(), totalItems, excludedItems);
+    }
+
+    /**
+     * Gets all allowed server items from cache
+     * This is now a fast O(1) operation instead of iterating through the entire registry
+     */
+    public static List<Item> getAllServerItems() {
+        if (!itemCacheBuilt || cachedAllowedItems == null) {
+            LOGGER.warn("Item cache not yet built, building now...");
+            buildItemCache();
+        }
+        return cachedAllowedItems;
+    }
+
+    /**
+     * Force rebuild the item cache (useful if items are registered after initial setup)
+     */
+    public static void rebuildItemCache() {
+        LOGGER.info("Rebuilding item cache...");
+        itemCacheBuilt = false;
+        cachedAllowedItems = null;
+        buildItemCache();
     }
 
     @SubscribeEvent
@@ -125,7 +186,8 @@ public class LootPackagesMod {
         END_LOOT("End Loot Package"),
         MOB_DROP("Mob Drop Package"),
         BIOME_SPECIFIC("Biome Package"),
-        MYSTERY("Mystery Package");
+        MYSTERY("Mystery Package"),
+        DEEP_DARK("Deep Dark Package");
 
         private final String displayName;
 
@@ -151,6 +213,7 @@ public class LootPackagesMod {
             case MOB_DROP -> generateMobDropLoot(loot);
             case BIOME_SPECIFIC -> generateBiomeLoot(loot);
             case MYSTERY -> generateMysteryLoot(loot);
+            case DEEP_DARK -> generateDeepDarkLoot(loot);
         }
 
         // Give items to player
@@ -201,20 +264,18 @@ public class LootPackagesMod {
     }
 
     private static void generateDungeonLoot(List<ItemStack> loot) {
-        // Iron gear with random enchantments
+        // Iron gear
         List<Item> ironGear = Arrays.asList(
                 Items.IRON_SWORD, Items.IRON_PICKAXE, Items.IRON_HELMET, Items.IRON_CHESTPLATE
         );
-        ItemStack gear = new ItemStack(ironGear.get(RANDOM.nextInt(ironGear.size())));
-        // Note: In a real mod, you'd add enchantments here
-        loot.add(gear);
+        loot.add(new ItemStack(ironGear.get(RANDOM.nextInt(ironGear.size()))));
 
         // Rare ores
         List<Item> ores = Arrays.asList(Items.GOLD_INGOT, Items.LAPIS_LAZULI, Items.REDSTONE);
         Item ore = ores.get(RANDOM.nextInt(ores.size()));
         loot.add(new ItemStack(ore, 2 + RANDOM.nextInt(6))); // 2-7 items
 
-        // Potions (represented as ingredients for now)
+        // Potions ingredients
         List<Item> potionIngredients = Arrays.asList(
                 Items.GLOWSTONE_DUST, Items.REDSTONE, Items.SPIDER_EYE, Items.GOLDEN_CARROT
         );
@@ -222,7 +283,7 @@ public class LootPackagesMod {
 
         // Dungeon atmosphere items
         if (RANDOM.nextFloat() < 0.3f) {
-            loot.add(new ItemStack(Items.MUSIC_DISC_CAT)); // Random music disc
+            loot.add(new ItemStack(Items.MUSIC_DISC_CAT));
         }
         loot.add(new ItemStack(Items.BONE, 3 + RANDOM.nextInt(5)));
         loot.add(new ItemStack(Items.STRING, 1 + RANDOM.nextInt(4)));
@@ -242,11 +303,11 @@ public class LootPackagesMod {
             loot.add(new ItemStack(Items.NAUTILUS_SHELL, 1 + RANDOM.nextInt(3)));
         }
 
-        // Maps (represented as paper for now)
+        // Maps and compass
         loot.add(new ItemStack(Items.MAP));
         loot.add(new ItemStack(Items.COMPASS));
 
-        // Rare enchanted gear (high-tier)
+        // Rare gear
         List<Item> rareGear = Arrays.asList(Items.DIAMOND_SWORD, Items.DIAMOND_PICKAXE, Items.BOW);
         loot.add(new ItemStack(rareGear.get(RANDOM.nextInt(rareGear.size()))));
     }
@@ -292,7 +353,7 @@ public class LootPackagesMod {
         loot.add(new ItemStack(Items.CHORUS_FRUIT, 6 + RANDOM.nextInt(11))); // 6-16 fruit
         loot.add(new ItemStack(Items.CHORUS_FLOWER, 1 + RANDOM.nextInt(3))); // 1-3 flowers
 
-        // High-tier enchanted gear
+        // High-tier gear
         List<Item> endGear = Arrays.asList(Items.DIAMOND_SWORD, Items.DIAMOND_PICKAXE, Items.DIAMOND_CHESTPLATE);
         loot.add(new ItemStack(endGear.get(RANDOM.nextInt(endGear.size()))));
 
@@ -324,7 +385,7 @@ public class LootPackagesMod {
 
         // Thematic combinations
         if (RANDOM.nextFloat() < 0.3f) {
-            loot.add(new ItemStack(Items.COBWEB, 2 + RANDOM.nextInt(4))); // With spider eyes
+            loot.add(new ItemStack(Items.COBWEB, 2 + RANDOM.nextInt(4)));
         }
     }
 
@@ -335,64 +396,151 @@ public class LootPackagesMod {
 
         switch (biome) {
             case "jungle":
-                loot.add(new ItemStack(Items.MELON_SLICE, 8 + RANDOM.nextInt(9))); // 8-16 melon
-                loot.add(new ItemStack(Items.BAMBOO, 16 + RANDOM.nextInt(17))); // 16-32 bamboo
-                loot.add(new ItemStack(Items.COCOA_BEANS, 4 + RANDOM.nextInt(5))); // 4-8 cocoa
-                loot.add(new ItemStack(Items.JUNGLE_LOG, 8 + RANDOM.nextInt(17))); // 8-24 logs
+                loot.add(new ItemStack(Items.MELON_SLICE, 8 + RANDOM.nextInt(9)));
+                loot.add(new ItemStack(Items.BAMBOO, 16 + RANDOM.nextInt(17)));
+                loot.add(new ItemStack(Items.COCOA_BEANS, 4 + RANDOM.nextInt(5)));
+                loot.add(new ItemStack(Items.JUNGLE_LOG, 8 + RANDOM.nextInt(17)));
                 break;
 
             case "desert":
-                loot.add(new ItemStack(Items.SAND, 16 + RANDOM.nextInt(33))); // 16-48 sand
-                loot.add(new ItemStack(Items.CACTUS, 4 + RANDOM.nextInt(5))); // 4-8 cactus
-                loot.add(new ItemStack(Items.GOLD_NUGGET, 8 + RANDOM.nextInt(9))); // 8-16 nuggets
-                loot.add(new ItemStack(Items.DEAD_BUSH, 2 + RANDOM.nextInt(4))); // 2-5 dead bush
+                loot.add(new ItemStack(Items.SAND, 16 + RANDOM.nextInt(33)));
+                loot.add(new ItemStack(Items.CACTUS, 4 + RANDOM.nextInt(5)));
+                loot.add(new ItemStack(Items.GOLD_NUGGET, 8 + RANDOM.nextInt(9)));
+                loot.add(new ItemStack(Items.DEAD_BUSH, 2 + RANDOM.nextInt(4)));
                 break;
 
             case "snowy":
-                loot.add(new ItemStack(Items.PACKED_ICE, 8 + RANDOM.nextInt(9))); // 8-16 ice
-                loot.add(new ItemStack(Items.SNOWBALL, 16 + RANDOM.nextInt(17))); // 16-32 snowballs
-                loot.add(new ItemStack(Items.RABBIT_HIDE, 3 + RANDOM.nextInt(4))); // 3-6 hide
-                loot.add(new ItemStack(Items.SPRUCE_LOG, 8 + RANDOM.nextInt(17))); // 8-24 logs
+                loot.add(new ItemStack(Items.PACKED_ICE, 8 + RANDOM.nextInt(9)));
+                loot.add(new ItemStack(Items.SNOWBALL, 16 + RANDOM.nextInt(17)));
+                loot.add(new ItemStack(Items.RABBIT_HIDE, 3 + RANDOM.nextInt(4)));
+                loot.add(new ItemStack(Items.SPRUCE_LOG, 8 + RANDOM.nextInt(17)));
                 break;
 
             case "ocean":
-                loot.add(new ItemStack(Items.PRISMARINE, 8 + RANDOM.nextInt(17))); // 8-24 prismarine
-                loot.add(new ItemStack(Items.KELP, 12 + RANDOM.nextInt(13))); // 12-24 kelp
+                loot.add(new ItemStack(Items.PRISMARINE, 8 + RANDOM.nextInt(17)));
+                loot.add(new ItemStack(Items.KELP, 12 + RANDOM.nextInt(13)));
                 if (RANDOM.nextFloat() < 0.1f) {
-                    loot.add(new ItemStack(Items.TRIDENT)); // Very rare
+                    loot.add(new ItemStack(Items.TRIDENT));
                 }
-                loot.add(new ItemStack(Items.COD, 4 + RANDOM.nextInt(5))); // 4-8 fish
+                loot.add(new ItemStack(Items.COD, 4 + RANDOM.nextInt(5)));
                 break;
 
             case "forest":
-                loot.add(new ItemStack(Items.OAK_LOG, 12 + RANDOM.nextInt(17))); // 12-28 logs
-                loot.add(new ItemStack(Items.APPLE, 6 + RANDOM.nextInt(7))); // 6-12 apples
-                loot.add(new ItemStack(Items.SWEET_BERRIES, 8 + RANDOM.nextInt(9))); // 8-16 berries
-                loot.add(new ItemStack(Items.MUSHROOM_STEW, 2 + RANDOM.nextInt(3))); // 2-4 stew
+                loot.add(new ItemStack(Items.OAK_LOG, 12 + RANDOM.nextInt(17)));
+                loot.add(new ItemStack(Items.APPLE, 6 + RANDOM.nextInt(7)));
+                loot.add(new ItemStack(Items.SWEET_BERRIES, 8 + RANDOM.nextInt(9)));
+                loot.add(new ItemStack(Items.MUSHROOM_STEW, 2 + RANDOM.nextInt(3)));
                 break;
 
             case "mountain":
-                loot.add(new ItemStack(Items.STONE, 16 + RANDOM.nextInt(17))); // 16-32 stone
-                loot.add(new ItemStack(Items.COAL, 8 + RANDOM.nextInt(9))); // 8-16 coal
-                loot.add(new ItemStack(Items.IRON_ORE, 3 + RANDOM.nextInt(4))); // 3-6 iron ore
-                loot.add(new ItemStack(Items.EMERALD, 1 + RANDOM.nextInt(3))); // 1-3 emerald
+                loot.add(new ItemStack(Items.STONE, 16 + RANDOM.nextInt(17)));
+                loot.add(new ItemStack(Items.COAL, 8 + RANDOM.nextInt(9)));
+                loot.add(new ItemStack(Items.IRON_ORE, 3 + RANDOM.nextInt(4)));
+                loot.add(new ItemStack(Items.EMERALD, 1 + RANDOM.nextInt(3)));
                 break;
         }
 
         LOGGER.info("Generated {} biome package", biome);
     }
 
+    private static void generateDeepDarkLoot(List<ItemStack> loot) {
+        // === Ancient City Exclusive Items (Always Include) ===
+        loot.add(new ItemStack(Items.ECHO_SHARD, 1 + RANDOM.nextInt(3))); // 1-3 echo shards
+        loot.add(new ItemStack(Items.DISC_FRAGMENT_5, 1 + RANDOM.nextInt(3))); // 1-3 disc fragments
+
+        // === Common Ancient City Loot ===
+        loot.add(new ItemStack(Items.COAL, 6 + RANDOM.nextInt(10))); // 6-15 coal
+        loot.add(new ItemStack(Items.BONE, 1 + RANDOM.nextInt(15))); // 1-15 bones
+        loot.add(new ItemStack(Items.SOUL_TORCH, 1 + RANDOM.nextInt(15))); // 1-15 soul torches
+        loot.add(new ItemStack(Items.CANDLE, 1 + RANDOM.nextInt(4))); // 1-4 candles
+        loot.add(new ItemStack(Items.SCULK, 4 + RANDOM.nextInt(7))); // 4-10 sculk
+        loot.add(new ItemStack(Items.SCULK_SENSOR, 1 + RANDOM.nextInt(3))); // 1-3 sculk sensors
+        loot.add(new ItemStack(Items.EXPERIENCE_BOTTLE, 1 + RANDOM.nextInt(3))); // 1-3 XP bottles
+        loot.add(new ItemStack(Items.BOOK, 3 + RANDOM.nextInt(8))); // 3-10 regular books
+        loot.add(new ItemStack(Items.AMETHYST_SHARD, 1 + RANDOM.nextInt(15))); // 1-15 amethyst
+        loot.add(new ItemStack(Items.GLOW_BERRIES, 1 + RANDOM.nextInt(15))); // 1-15 glow berries
+
+        // === High Value Ancient City Items (Chance-based) ===
+
+        // Enchanted Golden Apple (most valuable)
+        if (RANDOM.nextFloat() < 0.4f) {
+            loot.add(new ItemStack(Items.ENCHANTED_GOLDEN_APPLE, 1 + RANDOM.nextInt(2))); // 1-2
+        }
+
+        // Music Disc Otherside (very rare)
+        if (RANDOM.nextFloat() < 0.15f) {
+            loot.add(new ItemStack(Items.MUSIC_DISC_OTHERSIDE));
+        }
+
+        // Other valuable items from Ancient City
+        if (RANDOM.nextFloat() < 0.20f) {
+            loot.add(new ItemStack(Items.SCULK_CATALYST, 1 + RANDOM.nextInt(2))); // 1-2 catalysts
+        }
+
+        if (RANDOM.nextFloat() < 0.25f) {
+            loot.add(new ItemStack(Items.NAME_TAG));
+        }
+
+        if (RANDOM.nextFloat() < 0.25f) {
+            loot.add(new ItemStack(Items.LEAD));
+        }
+
+        if (RANDOM.nextFloat() < 0.20f) {
+            loot.add(new ItemStack(Items.DIAMOND_HORSE_ARMOR));
+        }
+
+        if (RANDOM.nextFloat() < 0.20f) {
+            loot.add(new ItemStack(Items.SADDLE));
+        }
+
+        if (RANDOM.nextFloat() < 0.15f) {
+            loot.add(new ItemStack(Items.COMPASS));
+        }
+
+        // Music discs
+        if (RANDOM.nextFloat() < 0.20f) {
+            List<Item> musicDiscs = Arrays.asList(Items.MUSIC_DISC_13, Items.MUSIC_DISC_CAT);
+            loot.add(new ItemStack(musicDiscs.get(RANDOM.nextInt(musicDiscs.size()))));
+        }
+
+        // Regular potions
+        if (RANDOM.nextFloat() < 0.40f) {
+            loot.add(new ItemStack(Items.POTION, 1 + RANDOM.nextInt(3))); // 1-3 potions
+        }
+
+        // Regular diamond hoe (no enchantments)
+        if (RANDOM.nextFloat() < 0.25f) {
+            ItemStack hoe = new ItemStack(Items.DIAMOND_HOE);
+            // Set some damage like Ancient City does (80-100%)
+            int maxDamage = hoe.getMaxDamage();
+            int damage = (int)(maxDamage * (0.8f + RANDOM.nextFloat() * 0.2f));
+            hoe.setDamageValue(damage);
+            loot.add(hoe);
+        }
+
+        LOGGER.info("Generated Deep Dark package with authentic Ancient City loot");
+    }
+
+    /**
+     * OPTIMIZED: Now uses cached item list instead of iterating registry every time
+     */
     private static void generateMysteryLoot(List<ItemStack> loot) {
-        // Completely random items from the allowed pool
+        // Get cached items list (fast operation)
         List<Item> allItems = getAllServerItems();
+
+        if (allItems.isEmpty()) {
+            LOGGER.warn("No allowed items found for mystery package! Falling back to basic items.");
+            // Fallback to basic items if cache is empty
+            loot.add(new ItemStack(Items.STICK, 1 + RANDOM.nextInt(16)));
+            loot.add(new ItemStack(Items.COBBLESTONE, 1 + RANDOM.nextInt(32)));
+            return;
+        }
 
         // Give 2-5 random items
         int itemCount = 2 + RANDOM.nextInt(4);
         Set<Item> chosenItems = new HashSet<>();
 
         for (int i = 0; i < itemCount && chosenItems.size() < itemCount; i++) {
-            if (allItems.isEmpty()) break;
-
             Item randomItem = allItems.get(RANDOM.nextInt(allItems.size()));
 
             if (chosenItems.contains(randomItem)) {
@@ -401,12 +549,15 @@ public class LootPackagesMod {
             }
 
             chosenItems.add(randomItem);
-            int amount = getRandomAmount(randomItem) / 2 + 1; // Smaller amounts for mystery
+            int amount = getRandomAmount(randomItem) / 2 + 1;
             loot.add(new ItemStack(randomItem, Math.max(1, amount)));
         }
+
+        LOGGER.debug("Generated mystery package with {} items from cache of {} total allowed items",
+                loot.size(), allItems.size());
     }
 
-    // Utility methods from original code
+    // Utility methods
     private boolean hasReceivedStarterPack(ServerPlayer player) {
         CompoundTag persistentData = player.getPersistentData();
         CompoundTag modData = persistentData.getCompound("lootpackages");
@@ -419,24 +570,6 @@ public class LootPackagesMod {
         modData.putBoolean(NBT_TAG_RECEIVED_STARTER, true);
         persistentData.put("lootpackages", modData);
         LOGGER.info("Marked player {} as having received starter pack", player.getName().getString());
-    }
-
-    public static List<Item> getAllServerItems() {
-        List<Item> allowedItems = new ArrayList<>();
-
-        for (Item item : BuiltInRegistries.ITEM) {
-            ResourceLocation location = BuiltInRegistries.ITEM.getKey(item);
-            if (location != null) {
-                boolean isVanilla = "minecraft".equals(location.getNamespace());
-                boolean isAllowedModded = ALLOWED_MODDED_ITEMS.contains(location.toString());
-
-                if ((isVanilla || isAllowedModded) && isItemAllowed(item)) {
-                    allowedItems.add(item);
-                }
-            }
-        }
-
-        return allowedItems;
     }
 
     public static boolean isItemAllowed(Item item) {

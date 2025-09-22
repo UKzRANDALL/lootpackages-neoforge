@@ -14,7 +14,7 @@ public class LootPackagesConfig {
         GIVE_STARTER_PACKAGE = BUILDER
                 .comment("Set to true to give new players a starter survival package when they join for the first time")
                 .comment("Set to false to disable starter packages for new players")
-                .define("giveStarterPackage", true);
+                .define("giveStarterPackage", false);
     }
 
     public static final ModConfigSpec SPEC = BUILDER.build();

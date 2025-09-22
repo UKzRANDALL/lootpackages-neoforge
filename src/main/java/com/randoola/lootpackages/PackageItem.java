@@ -30,7 +30,7 @@ public class PackageItem extends Item {
             LootPackagesMod.generatePackageLoot(serverPlayer, packageType);
 
             // Send message to player about what package they opened
-            String message = "§6Opened " + packageType.getDisplayName() + "!";
+            String message = "Â§6Opened " + packageType.getDisplayName() + "!";
             serverPlayer.sendSystemMessage(Component.literal(message), false);
 
             // Consume the package
@@ -45,41 +45,46 @@ public class PackageItem extends Item {
     public void appendHoverText(ItemStack stack, Level level, List<Component> tooltip, TooltipFlag flag) {
         switch (packageType) {
             case STARTER_SURVIVAL -> {
-                tooltip.add(Component.literal("§7Basic tools, food, and supplies"));
-                tooltip.add(Component.literal("§7Perfect for new adventurers"));
+                tooltip.add(Component.literal("Â§7Basic tools, food, and supplies"));
+                tooltip.add(Component.literal("Â§7Perfect for new adventurers"));
             }
             case DUNGEON_LOOT -> {
-                tooltip.add(Component.literal("§7Enchanted gear and rare materials"));
-                tooltip.add(Component.literal("§7Found in dark underground places"));
+                tooltip.add(Component.literal("Â§7Enchanted gear and rare materials"));
+                tooltip.add(Component.literal("Â§7Found in dark underground places"));
             }
             case TREASURE -> {
-                tooltip.add(Component.literal("§6Valuable gems and precious items"));
-                tooltip.add(Component.literal("§6Buried treasure and riches"));
+                tooltip.add(Component.literal("Â§6Valuable gems and precious items"));
+                tooltip.add(Component.literal("Â§6Buried treasure and riches"));
             }
             case NETHER_LOOT -> {
-                tooltip.add(Component.literal("§cFiery materials from the Nether"));
-                tooltip.add(Component.literal("§cGold, magma, and flame-touched gear"));
+                tooltip.add(Component.literal("Â§cFiery materials from the Nether"));
+                tooltip.add(Component.literal("Â§cGold, magma, and flame-touched gear"));
             }
             case END_LOOT -> {
-                tooltip.add(Component.literal("§5Mysterious items from the End"));
-                tooltip.add(Component.literal("§5Ender pearls and otherworldly gear"));
+                tooltip.add(Component.literal("Â§5Mysterious items from the End"));
+                tooltip.add(Component.literal("Â§5Ender pearls and otherworldly gear"));
             }
             case MOB_DROP -> {
-                tooltip.add(Component.literal("§8Materials dropped by creatures"));
-                tooltip.add(Component.literal("§8Bones, strings, and mob essences"));
+                tooltip.add(Component.literal("Â§8Materials dropped by creatures"));
+                tooltip.add(Component.literal("Â§8Bones, strings, and mob essences"));
             }
             case BIOME_SPECIFIC -> {
-                tooltip.add(Component.literal("§2Resources from various biomes"));
-                tooltip.add(Component.literal("§2Forest, desert, ocean, and more"));
+                tooltip.add(Component.literal("Â§2Resources from various biomes"));
+                tooltip.add(Component.literal("Â§2Forest, desert, ocean, and more"));
             }
             case MYSTERY -> {
-                tooltip.add(Component.literal("§d???"));
-                tooltip.add(Component.literal("§dAnything could be inside!"));
+                tooltip.add(Component.literal("Â§d???"));
+                tooltip.add(Component.literal("Â§dAnything could be inside!"));
+            }
+            case DEEP_DARK -> {
+                tooltip.add(Component.literal("Â§0Ancient materials from the depths"));
+                tooltip.add(Component.literal("Â§0Sculk blocks, echo shards, and silence"));
+                tooltip.add(Component.literal("Â§8Contains exclusive Ancient City loot"));
             }
         }
 
         tooltip.add(Component.literal(""));
-        tooltip.add(Component.literal("§eRight-click to open"));
+        tooltip.add(Component.literal("Â§eRight-click to open"));
     }
 
     @Override

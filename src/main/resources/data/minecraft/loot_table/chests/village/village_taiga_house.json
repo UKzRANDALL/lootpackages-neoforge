@@ -112,7 +112,7 @@
       "entries": [
         {
           "type": "minecraft:item",
-          "name": "starterpack:starter_survival_package",
+          "name": "lootpackages:starter_survival_package",
           "weight": 1
         }
       ],
@@ -120,6 +120,23 @@
         {
           "condition": "minecraft:random_chance",
           "chance": 0.05
+        }
+      ]
+    },
+    {
+      "rolls": 1,
+      "bonus_rolls": 0.0,
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "lootpackages:biome_package",
+          "weight": 1
+        }
+      ],
+      "conditions": [
+        {
+          "condition": "minecraft:random_chance",
+          "chance": 0.03
         }
       ]
     }

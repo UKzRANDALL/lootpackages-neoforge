@@ -9,5 +9,16 @@
   "starterpack.configuration.items": "Item List",
   "starterpack.configuration.logDirtBlock": "Log Dirt Block",
   "starterpack.configuration.magicNumberIntroduction": "Magic Number Text",
-  "starterpack.configuration.magicNumber": "Magic Number"
+  "starterpack.configuration.magicNumber": "Magic Number",
+  "item.lootpackages.starter_survival_package": "Starter Survival Package",
+  "item.lootpackages.dungeon_loot_package": "Dungeon Loot Package",
+  "item.lootpackages.treasure_package": "Treasure Package",
+  "item.lootpackages.nether_loot_package": "Nether Loot Package",
+  "item.lootpackages.end_loot_package": "End Loot Package",
+  "item.lootpackages.mob_drop_package": "Mob Drop Package",
+  "item.lootpackages.biome_package": "Biome Package",
+  "item.lootpackages.mystery_package": "Mystery Package",
+  "item.lootpackages.deep_dark_package": "Deep Dark Package",
+
+  "itemGroup.lootpackages.loot_packages": "Loot Packages"
 }
