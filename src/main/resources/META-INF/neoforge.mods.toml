@@ -4,7 +4,7 @@ license="MIT"
 
 [[mods]]
 modId="lootpackages"
-version="2.0.5"
+version="2.0.7"
 displayName="Loot Packages"
 authors="Randoola"
 description='''Ability to give players a starting package and also ability to find packages in loot!'''
@@ -12,7 +12,7 @@ description='''Ability to give players a starting package and also ability to fi
 [[dependencies.lootpackages]]
 modId="neoforge"
 type="required"
-versionRange="[21.1.200,21.1.207)"
+versionRange="[21.1.200,)"
 ordering="NONE"
 side="BOTH"
 
